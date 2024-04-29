@@ -2,6 +2,8 @@
 name = "nanoval"
 version = "0.1.0"
 edition = "2021"
+description = "A nan-tagged value for representing f64, i32, u32, booleans, null and arbitrary pointers."
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
