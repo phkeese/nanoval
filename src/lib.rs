@@ -192,6 +192,13 @@ impl Value {
     pub unsafe fn as_pointer_unchecked<T>(self) -> *const T {
         (self.bits & !Self::POINTER_BITS) as *const T
     }
+
+    /// Unchecked conversion to reference.
+    /// # Safety
+    /// The caller must be certain that the value is a pointer.
+    pub unsafe fn as_ref<'a, T>(self) -> &'a T {
+        &*self.as_pointer_unchecked()
+    }
 }
 
 impl From<f64> for Value {
@@ -239,6 +246,12 @@ impl<T> From<*const T> for Value {
     }
 }
 
+impl<T> From<&T> for Value {
+    fn from(value: &T) -> Self {
+        Self::from(value as *const T)
+    }
+}
+
 impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         unsafe {
@@ -276,6 +289,7 @@ mod tests {
         assert!(!value.is_u32());
         assert!(!value.is_bool());
         assert!(!value.is_null());
+        assert!(!value.is_pointer());
         assert_eq!(value.as_double(), Some(42.0));
         assert_eq!(value.as_double_unchecked(), 42.0);
     }
@@ -288,6 +302,7 @@ mod tests {
         assert!(!value.is_u32());
         assert!(!value.is_bool());
         assert!(!value.is_null());
+        assert!(!value.is_pointer());
         assert!(value.as_double().unwrap().is_nan());
         assert!(value.as_double_unchecked().is_nan());
     }
@@ -300,6 +315,7 @@ mod tests {
         assert!(!value.is_u32());
         assert!(!value.is_bool());
         assert!(!value.is_null());
+        assert!(!value.is_pointer());
         assert_eq!(value.as_i32(), Some(-1234));
         unsafe { assert_eq!(value.as_i32_unchecked(), -1234); }
     }
@@ -312,6 +328,7 @@ mod tests {
         assert!(value.is_u32());
         assert!(!value.is_bool());
         assert!(!value.is_null());
+        assert!(!value.is_pointer());
         assert_eq!(value.as_u32(), Some(1234u32));
         unsafe { assert_eq!(value.as_u32_unchecked(), 1234u32); }
     }
@@ -324,6 +341,7 @@ mod tests {
         assert!(!value.is_u32());
         assert!(value.is_bool());
         assert!(!value.is_null());
+        assert!(!value.is_pointer());
         assert_eq!(value.as_bool(), Some(true));
         unsafe { assert!(value.as_bool_unchecked()); }
     }
@@ -336,15 +354,34 @@ mod tests {
         assert!(!value.is_u32());
         assert!(!value.is_bool());
         assert!(value.is_null());
+        assert!(!value.is_pointer());
     }
 
     #[test]
     fn test_pointer() {
         let ptr = 0xdead_beef as *const u8;
         let value = Value::from(ptr);
+        assert!(!value.is_double());
+        assert!(!value.is_i32());
+        assert!(!value.is_u32());
+        assert!(!value.is_bool());
+        assert!(!value.is_null());
         assert!(value.is_pointer());
         assert_eq!(value.as_pointer(), Some(ptr));
         unsafe { assert_eq!(value.as_pointer_unchecked(), ptr); }
+    }
+
+    #[test]
+    fn test_ref() {
+        let pointee = 10;
+        let pointer = Value::from(&pointee);
+        assert!(!pointer.is_double());
+        assert!(!pointer.is_i32());
+        assert!(!pointer.is_u32());
+        assert!(!pointer.is_bool());
+        assert!(!pointer.is_null());
+        assert!(pointer.is_pointer());
+        unsafe { assert_eq!(pointer.as_ref::<i32>(), &pointee); }
     }
 
     #[test]
