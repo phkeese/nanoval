@@ -28,7 +28,7 @@ use std::fmt::{Display, Formatter};
 /// # let pointee = 42;
 /// # let pointer = Value::from(&pointee);
 /// assert_eq!(double.as_f64(), Some(3.14));
-/// assert_eq!(integer.as_i32(), Some(42));
+/// assert_eq!(integer.as_int(), Some(42));
 /// assert_eq!(boolean.as_bool(), Some(true));
 /// assert!(null.is_null());
 /// assert_eq!(pointer.as_pointer::<i32>(), Some(&pointee as *const i32));
@@ -45,8 +45,7 @@ enum Tag {
     Null,
     False,
     True,
-    I32,
-    U32,
+    Int,
     Pointer,
 }
 
@@ -56,8 +55,8 @@ impl Value {
     const SIGN_BIT: u64 = 1 << 63;
     /// Special NaN value for representing NaNs and non-f64 values.
     const QUIET_NAN: u64 = 0x7ff8_0000_0000_0000;
-    /// Bits set for pointers.
-    const POINTER_BITS: u64 = Self::SIGN_BIT | Self::QUIET_NAN;
+    /// Integer mask for 48 bits.
+    const INT_MASK: u64 = 0xffff_ffff_ffff;
 
     /// Mask used for tag bits. Just 3 bits, shifted to the left by 48 to stay clear of pointer bits.
     const TAG_MASK: u64 = 0b111 << 48;
@@ -84,16 +83,14 @@ impl Value {
     const fn tag(self) -> Tag {
         if self.is_f64() {
             return Tag::F64;
-        } else if self.is_pointer() {
-            return Tag::Pointer;
         }
         let tag = (self.bits & Self::TAG_MASK) >> 48;
         match tag {
             x if x == Tag::Null as u64 => Tag::Null,
             x if x == Tag::False as u64 => Tag::False,
             x if x == Tag::True as u64 => Tag::True,
-            x if x == Tag::I32 as u64 => Tag::I32,
-            x if x == Tag::U32 as u64 => Tag::U32,
+            x if x == Tag::Int as u64 => Tag::Int,
+            x if x == Tag::Pointer as u64 => Tag::Pointer,
             _ => unreachable!()
         }
     }
@@ -108,18 +105,10 @@ impl Value {
         }
     }
 
-    /// Is this value an i32?
-    pub const fn is_i32(self) -> bool {
+    /// Is this value an integer?
+    pub const fn is_int(self) -> bool {
         match self.tag() {
-            Tag::I32 => true,
-            _ => false,
-        }
-    }
-
-    /// Is this value an u32?
-    pub const fn is_u32(self) -> bool {
-        match self.tag() {
-            Tag::U32 => true,
+            Tag::Int => true,
             _ => false,
         }
     }
@@ -132,7 +121,10 @@ impl Value {
 
     /// Is this value a pointer?
     pub const fn is_pointer(self) -> bool {
-        (self.bits & Self::POINTER_BITS) == Self::POINTER_BITS
+        match self.tag() {
+            Tag::Pointer => true,
+            _ => false,
+        }
     }
 
     /// Is this value null?
@@ -149,19 +141,16 @@ impl Value {
         }
     }
 
-    /// Get the value as an i32.
-    pub const fn as_i32(self) -> Option<i32> {
-        if self.is_i32() {
-            Some(self.bits as i32)
-        } else {
-            None
-        }
-    }
-
-    /// Get the value as an u32.
-    pub const fn as_u32(self) -> Option<u32> {
-        if self.is_u32() {
-            Some(self.bits as u32)
+    /// Get the value as an integer.
+    pub const fn as_int(self) -> Option<i64> {
+        if self.is_int() {
+            // Mask out lower 48 bits to get the integer value.
+            let bits = self.bits & Self::INT_MASK;
+            if self.bits & Self::SIGN_BIT != 0 {
+                Some(-(bits as i64))
+            } else {
+                Some(bits as i64)
+            }
         } else {
             None
         }
@@ -179,7 +168,7 @@ impl Value {
     /// Get the value as a pointer.
     pub const fn as_pointer<T>(self) -> Option<*const T> {
         if self.is_pointer() {
-            Some((self.bits & !Self::POINTER_BITS) as *const T)
+            Some((self.bits & Self::INT_MASK) as *const T)
         } else {
             None
         }
@@ -192,18 +181,17 @@ impl Value {
         f64::from_bits(self.bits)
     }
 
-    /// Unchecked conversion to i32.
+    /// Unchecked conversion to integer.
     /// # Safety
-    /// The caller must be certain that the value is an i32.
-    pub const unsafe fn as_i32_unchecked(self) -> i32 {
-        self.bits as u32 as i32
-    }
-
-    /// Unchecked conversion to u32.
-    /// # Safety
-    /// The caller must be certain that the value is an u32.
-    pub const unsafe fn as_u32_unchecked(self) -> u32 {
-        self.bits as u32
+    /// The caller must be certain that the value is an integer.
+    pub const unsafe fn as_int_unchecked(self) -> i64 {
+        let value = self.bits & Self::INT_MASK;
+        // Here the value's sign bit is never set, so we can safely cast to i64.
+        if self.bits & Self::SIGN_BIT != 0 {
+            -(value as i64)
+        } else {
+            value as i64
+        }
     }
 
     /// Unchecked conversion to boolean.
@@ -217,7 +205,7 @@ impl Value {
     /// # Safety
     /// The caller must be certain that the value is a pointer.
     pub const unsafe fn as_pointer_unchecked<T>(self) -> *const T {
-        (self.bits & !Self::POINTER_BITS) as *const T
+        (self.bits & Self::INT_MASK) as *const T
     }
 
     /// Unchecked conversion to reference.
@@ -240,14 +228,30 @@ impl From<f64> for Value {
 
 impl From<i32> for Value {
     fn from(value: i32) -> Self {
-        let bits = value as u32 as u64;
-        Self::new(Tag::I32, bits)
+        Self::try_from(value as i64).unwrap()
     }
 }
 
 impl From<u32> for Value {
     fn from(value: u32) -> Self {
-        Self::new(Tag::U32, value as u64)
+        Self::new(Tag::Int, value as u64)
+    }
+}
+
+impl TryFrom<i64> for Value {
+    type Error = ();
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        // If the absolute value cannot fit into 48 bits, return an error.
+        if value.unsigned_abs() > Self::INT_MASK {
+            return Err(());
+        }
+        let bits = if value < 0 {
+            Self::SIGN_BIT | value.unsigned_abs()
+        } else {
+            value as u64
+        };
+        Ok(Self::new(Tag::Int, bits))
     }
 }
 
@@ -269,7 +273,7 @@ impl From<()> for Value {
 
 impl<T> From<*const T> for Value {
     fn from(ptr: *const T) -> Self {
-        Self { bits: Self::POINTER_BITS | ptr as u64 }
+        Self::new(Tag::Pointer, ptr as u64)
     }
 }
 
@@ -287,9 +291,8 @@ impl Display for Value {
                 Tag::False => write!(f, "false"),
                 Tag::True => write!(f, "true"),
                 Tag::Null => write!(f, "null"),
-                Tag::I32 => write!(f, "{}", self.as_i32_unchecked()),
-                Tag::U32 => write!(f, "{}", self.as_u32_unchecked()),
-                _ => write!(f, "{:p}", self.as_pointer_unchecked::<u8>()),
+                Tag::Int => write!(f, "{}", self.as_int_unchecked()),
+                Tag::Pointer => write!(f, "{:p}", self.as_pointer_unchecked::<u8>()),
             }
         }
     }
@@ -304,16 +307,14 @@ mod tests {
         assert!(Value::FALSE.is_bool());
         assert!(Value::TRUE.is_bool());
         assert!(Value::NULL.is_null());
-        assert!(Value::new_primitive(Tag::I32).is_i32());
-        assert!(Value::new_primitive(Tag::U32).is_u32());
+        assert!(Value::new_primitive(Tag::Int).is_int());
     }
 
     #[test]
     fn test_f64() {
         let value = Value::from(42.0);
         assert!(value.is_f64());
-        assert!(!value.is_i32());
-        assert!(!value.is_u32());
+        assert!(!value.is_int());
         assert!(!value.is_bool());
         assert!(!value.is_null());
         assert!(!value.is_pointer());
@@ -325,8 +326,7 @@ mod tests {
     fn test_nan() {
         let value = Value::from(f64::NAN);
         assert!(value.is_f64());
-        assert!(!value.is_i32());
-        assert!(!value.is_u32());
+        assert!(!value.is_int());
         assert!(!value.is_bool());
         assert!(!value.is_null());
         assert!(!value.is_pointer());
@@ -338,34 +338,49 @@ mod tests {
     fn test_i32() {
         let value = Value::from(-1234);
         assert!(!value.is_f64());
-        assert!(value.is_i32());
-        assert!(!value.is_u32());
+        assert!(value.is_int());
         assert!(!value.is_bool());
         assert!(!value.is_null());
         assert!(!value.is_pointer());
-        assert_eq!(value.as_i32(), Some(-1234));
-        unsafe { assert_eq!(value.as_i32_unchecked(), -1234); }
+        assert_eq!(value.as_int(), Some(-1234));
+        unsafe { assert_eq!(value.as_int_unchecked(), -1234); }
     }
 
     #[test]
     fn test_u32() {
         let value = Value::from(1234u32);
         assert!(!value.is_f64());
-        assert!(!value.is_i32());
-        assert!(value.is_u32());
+        assert!(value.is_int());
         assert!(!value.is_bool());
         assert!(!value.is_null());
         assert!(!value.is_pointer());
-        assert_eq!(value.as_u32(), Some(1234u32));
-        unsafe { assert_eq!(value.as_u32_unchecked(), 1234u32); }
+        assert_eq!(value.as_int(), Some(1234));
+        unsafe { assert_eq!(value.as_int_unchecked(), 1234); }
+    }
+
+    #[test]
+    fn test_large_int() {
+        let value = Value::try_from(0xffff_ffff_ffffi64).expect("value should fit");
+        assert!(!value.is_f64());
+        assert!(value.is_int());
+        assert!(!value.is_bool());
+        assert!(!value.is_null());
+        assert!(!value.is_pointer());
+        assert_eq!(value.as_int(), Some(0xffff_ffff_ffff));
+        unsafe { assert_eq!(value.as_int_unchecked(), 0xffff_ffff_ffff); }
+    }
+
+    #[test]
+    fn test_large_int_overflow() {
+        let value = Value::try_from(0x1_0000_0000_0000i64);
+        assert!(value.is_err());
     }
 
     #[test]
     fn test_bool() {
         let value = Value::from(true);
         assert!(!value.is_f64());
-        assert!(!value.is_i32());
-        assert!(!value.is_u32());
+        assert!(!value.is_int());
         assert!(value.is_bool());
         assert!(!value.is_null());
         assert!(!value.is_pointer());
@@ -377,8 +392,7 @@ mod tests {
     fn test_null() {
         let value = Value::from(());
         assert!(!value.is_f64());
-        assert!(!value.is_i32());
-        assert!(!value.is_u32());
+        assert!(!value.is_int());
         assert!(!value.is_bool());
         assert!(value.is_null());
         assert!(!value.is_pointer());
@@ -389,8 +403,7 @@ mod tests {
         let ptr = 0xdead_beef as *const u8;
         let value = Value::from(ptr);
         assert!(!value.is_f64());
-        assert!(!value.is_i32());
-        assert!(!value.is_u32());
+        assert!(!value.is_int());
         assert!(!value.is_bool());
         assert!(!value.is_null());
         assert!(value.is_pointer());
@@ -403,8 +416,7 @@ mod tests {
         let pointee = 10;
         let pointer = Value::from(&pointee);
         assert!(!pointer.is_f64());
-        assert!(!pointer.is_i32());
-        assert!(!pointer.is_u32());
+        assert!(!pointer.is_int());
         assert!(!pointer.is_bool());
         assert!(!pointer.is_null());
         assert!(pointer.is_pointer());
@@ -419,6 +431,8 @@ mod tests {
         assert_eq!(format!("{}", value), "-1234");
         let value = Value::from(1234u32);
         assert_eq!(format!("{}", value), "1234");
+        let value = Value::try_from(0xffff_ffff_ffffi64).expect("value should fit");
+        assert_eq!(format!("{}", value), "281474976710655");
         let value = Value::from(true);
         assert_eq!(format!("{}", value), "true");
         let value = Value::from(());
