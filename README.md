@@ -30,7 +30,7 @@ let pointer = Value::from( & 42);
 The constructed value can be converted back to the original type:
 
 ```rust
-assert_eq!(double.as_double(), Some(3.14));
+assert_eq!(double.as_f64(), Some(3.14));
 assert_eq!(integer.as_i32(), Some(42));
 assert_eq!(boolean.as_bool(), Some(true));
 assert!(null.is_null());

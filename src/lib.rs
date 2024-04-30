@@ -1,6 +1,36 @@
 use std::fmt::{Display, Formatter};
 
 /// A NaN-tagged value supporting f64, i32, u32, booleans, null and arbitrary pointers.
+/// ## Usage
+///
+/// The `Value` type can be constructed from `f64`, `bool`, `i32`, `u32`, `()` and pointers and references to arbitrary `T`:
+///
+/// ```rust
+/// use nanoval::Value;
+///
+/// let double = Value::from(3.14);
+/// let integer = Value::from(42);
+/// let boolean = Value::from(true);
+/// let null = Value::from(());
+/// let pointer = Value::from(&42);
+/// ```
+///
+/// The constructed value can be converted back to the original type:
+///
+/// ```rust
+/// # use nanoval::Value;
+///
+/// # let double = Value::from(3.14);
+/// # let integer = Value::from(42);
+/// # let boolean = Value::from(true);
+/// # let null = Value::from(());
+/// # let pointer = Value::from(&42);
+/// assert_eq!(double.as_f64(), Some(3.14));
+/// assert_eq!(integer.as_i32(), Some(42));
+/// assert_eq!(boolean.as_bool(), Some(true));
+/// assert!(null.is_null());
+/// assert_eq!(pointer.as_pointer::<i32>(), Some(&42 as *const i32));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Value {
     bits: u64,
@@ -9,7 +39,7 @@ pub struct Value {
 #[repr(u64)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum Tag {
-    Double = 0,
+    F64 = 0,
     Null,
     False,
     True,
@@ -34,7 +64,7 @@ impl Value {
     const FALSE: Self = Self::new_primitive(Tag::False);
     const TRUE: Self = Self::new_primitive(Tag::True);
     const NULL: Self = Self::new_primitive(Tag::Null);
-    const NAN: Self = Self::new_primitive(Tag::Double);
+    const NAN: Self = Self::new_primitive(Tag::F64);
 
     /// Create a primitive tagged value.
     const fn new_primitive(tag: Tag) -> Self {
@@ -50,8 +80,8 @@ impl Value {
 
     /// Get type of value.
     const fn tag(self) -> Tag {
-        if self.is_double() {
-            return Tag::Double;
+        if self.is_f64() {
+            return Tag::F64;
         } else if self.is_pointer() {
             return Tag::Pointer;
         }
@@ -68,7 +98,7 @@ impl Value {
 
     /// Is this value a f64?
     /// Valid f64 are not NaN, or if they are, they have a specific bit pattern.
-    pub const fn is_double(self) -> bool {
+    pub const fn is_f64(self) -> bool {
         if self.bits == Self::NAN.bits {
             true
         } else {
@@ -109,8 +139,8 @@ impl Value {
     }
 
     /// Get the value as a f64.
-    pub fn as_double(self) -> Option<f64> {
-        if self.is_double() {
+    pub fn as_f64(self) -> Option<f64> {
+        if self.is_f64() {
             Some(f64::from_bits(self.bits))
         } else {
             None
@@ -156,7 +186,7 @@ impl Value {
     /// Unchecked conversion to f64.
     /// # Safety
     /// Conversion to f64 is always safe, but might return NaN.
-    pub fn as_double_unchecked(self) -> f64 {
+    pub fn as_f64_unchecked(self) -> f64 {
         f64::from_bits(self.bits)
     }
 
@@ -251,7 +281,7 @@ impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         unsafe {
             match self.tag() {
-                Tag::Double => write!(f, "{}", self.as_double_unchecked()),
+                Tag::F64 => write!(f, "{}", self.as_f64_unchecked()),
                 Tag::False => write!(f, "false"),
                 Tag::True => write!(f, "true"),
                 Tag::Null => write!(f, "null"),
@@ -277,35 +307,35 @@ mod tests {
     }
 
     #[test]
-    fn test_double() {
+    fn test_f64() {
         let value = Value::from(42.0);
-        assert!(value.is_double());
+        assert!(value.is_f64());
         assert!(!value.is_i32());
         assert!(!value.is_u32());
         assert!(!value.is_bool());
         assert!(!value.is_null());
         assert!(!value.is_pointer());
-        assert_eq!(value.as_double(), Some(42.0));
-        assert_eq!(value.as_double_unchecked(), 42.0);
+        assert_eq!(value.as_f64(), Some(42.0));
+        assert_eq!(value.as_f64_unchecked(), 42.0);
     }
 
     #[test]
     fn test_nan() {
         let value = Value::from(f64::NAN);
-        assert!(value.is_double());
+        assert!(value.is_f64());
         assert!(!value.is_i32());
         assert!(!value.is_u32());
         assert!(!value.is_bool());
         assert!(!value.is_null());
         assert!(!value.is_pointer());
-        assert!(value.as_double().unwrap().is_nan());
-        assert!(value.as_double_unchecked().is_nan());
+        assert!(value.as_f64().unwrap().is_nan());
+        assert!(value.as_f64_unchecked().is_nan());
     }
 
     #[test]
     fn test_i32() {
         let value = Value::from(-1234);
-        assert!(!value.is_double());
+        assert!(!value.is_f64());
         assert!(value.is_i32());
         assert!(!value.is_u32());
         assert!(!value.is_bool());
@@ -318,7 +348,7 @@ mod tests {
     #[test]
     fn test_u32() {
         let value = Value::from(1234u32);
-        assert!(!value.is_double());
+        assert!(!value.is_f64());
         assert!(!value.is_i32());
         assert!(value.is_u32());
         assert!(!value.is_bool());
@@ -331,7 +361,7 @@ mod tests {
     #[test]
     fn test_bool() {
         let value = Value::from(true);
-        assert!(!value.is_double());
+        assert!(!value.is_f64());
         assert!(!value.is_i32());
         assert!(!value.is_u32());
         assert!(value.is_bool());
@@ -344,7 +374,7 @@ mod tests {
     #[test]
     fn test_null() {
         let value = Value::from(());
-        assert!(!value.is_double());
+        assert!(!value.is_f64());
         assert!(!value.is_i32());
         assert!(!value.is_u32());
         assert!(!value.is_bool());
@@ -356,7 +386,7 @@ mod tests {
     fn test_pointer() {
         let ptr = 0xdead_beef as *const u8;
         let value = Value::from(ptr);
-        assert!(!value.is_double());
+        assert!(!value.is_f64());
         assert!(!value.is_i32());
         assert!(!value.is_u32());
         assert!(!value.is_bool());
@@ -370,7 +400,7 @@ mod tests {
     fn test_ref() {
         let pointee = 10;
         let pointer = Value::from(&pointee);
-        assert!(!pointer.is_double());
+        assert!(!pointer.is_f64());
         assert!(!pointer.is_i32());
         assert!(!pointer.is_u32());
         assert!(!pointer.is_bool());
