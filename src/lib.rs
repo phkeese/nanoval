@@ -49,7 +49,7 @@ impl Value {
     }
 
     /// Get type of value.
-    fn tag(self) -> Tag {
+    const fn tag(self) -> Tag {
         if self.is_double() {
             return Tag::Double;
         } else if self.is_pointer() {
@@ -68,8 +68,8 @@ impl Value {
 
     /// Is this value a f64?
     /// Valid f64 are not NaN, or if they are, they have a specific bit pattern.
-    pub fn is_double(self) -> bool {
-        if self == Self::NAN {
+    pub const fn is_double(self) -> bool {
+        if self.bits == Self::NAN.bits {
             true
         } else {
             (self.bits & Self::QUIET_NAN) != Self::QUIET_NAN
@@ -77,28 +77,35 @@ impl Value {
     }
 
     /// Is this value an i32?
-    pub fn is_i32(self) -> bool {
-        self.tag() == Tag::I32
+    pub const fn is_i32(self) -> bool {
+        match self.tag() {
+            Tag::I32 => true,
+            _ => false,
+        }
     }
 
     /// Is this value an u32?
-    pub fn is_u32(self) -> bool {
-        self.tag() == Tag::U32
+    pub const fn is_u32(self) -> bool {
+        match self.tag() {
+            Tag::U32 => true,
+            _ => false,
+        }
     }
 
     /// Is this value a boolean?
-    pub fn is_bool(self) -> bool {
-        self == Self::FALSE || self == Self::TRUE
+    pub const fn is_bool(self) -> bool {
+        let bits = self.bits;
+        bits == Self::FALSE.bits || bits == Self::TRUE.bits
     }
 
     /// Is this value a pointer?
-    pub fn is_pointer(self) -> bool {
+    pub const fn is_pointer(self) -> bool {
         (self.bits & Self::POINTER_BITS) == Self::POINTER_BITS
     }
 
     /// Is this value null?
-    pub fn is_null(self) -> bool {
-        self == Self::NULL
+    pub const fn is_null(self) -> bool {
+        self.bits == Self::NULL.bits
     }
 
     /// Get the value as a f64.
@@ -111,7 +118,7 @@ impl Value {
     }
 
     /// Get the value as an i32.
-    pub fn as_i32(self) -> Option<i32> {
+    pub const fn as_i32(self) -> Option<i32> {
         if self.is_i32() {
             Some(self.bits as i32)
         } else {
@@ -120,7 +127,7 @@ impl Value {
     }
 
     /// Get the value as an u32.
-    pub fn as_u32(self) -> Option<u32> {
+    pub const fn as_u32(self) -> Option<u32> {
         if self.is_u32() {
             Some(self.bits as u32)
         } else {
@@ -129,18 +136,16 @@ impl Value {
     }
 
     /// Get the value as a boolean.
-    pub fn as_bool(self) -> Option<bool> {
-        if self == Self::FALSE {
-            Some(false)
-        } else if self == Self::TRUE {
-            Some(true)
-        } else {
-            None
+    pub const fn as_bool(self) -> Option<bool> {
+        match self.tag() {
+            Tag::False => Some(false),
+            Tag::True => Some(true),
+            _ => None,
         }
     }
 
     /// Get the value as a pointer.
-    pub fn as_pointer<T>(self) -> Option<*const T> {
+    pub const fn as_pointer<T>(self) -> Option<*const T> {
         if self.is_pointer() {
             Some((self.bits & !Self::POINTER_BITS) as *const T)
         } else {
@@ -158,35 +163,35 @@ impl Value {
     /// Unchecked conversion to i32.
     /// # Safety
     /// The caller must be certain that the value is an i32.
-    pub unsafe fn as_i32_unchecked(self) -> i32 {
+    pub const unsafe fn as_i32_unchecked(self) -> i32 {
         self.bits as u32 as i32
     }
 
     /// Unchecked conversion to u32.
     /// # Safety
     /// The caller must be certain that the value is an u32.
-    pub unsafe fn as_u32_unchecked(self) -> u32 {
+    pub const unsafe fn as_u32_unchecked(self) -> u32 {
         self.bits as u32
     }
 
     /// Unchecked conversion to boolean.
     /// # Safety
     /// The caller must be certain that the value is a boolean.
-    pub unsafe fn as_bool_unchecked(self) -> bool {
-        self == Self::TRUE
+    pub const unsafe fn as_bool_unchecked(self) -> bool {
+        self.bits == Self::TRUE.bits
     }
 
     /// Unchecked conversion to pointer.
     /// # Safety
     /// The caller must be certain that the value is a pointer.
-    pub unsafe fn as_pointer_unchecked<T>(self) -> *const T {
+    pub const unsafe fn as_pointer_unchecked<T>(self) -> *const T {
         (self.bits & !Self::POINTER_BITS) as *const T
     }
 
     /// Unchecked conversion to reference.
     /// # Safety
     /// The caller must be certain that the value is a pointer.
-    pub unsafe fn as_ref<'a, T>(self) -> &'a T {
+    pub const unsafe fn as_ref<'a, T>(self) -> &'a T {
         &*self.as_pointer_unchecked()
     }
 }
