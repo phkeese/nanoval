@@ -271,15 +271,16 @@ impl From<()> for Value {
     }
 }
 
-impl<T> From<*const T> for Value {
-    fn from(ptr: *const T) -> Self {
-        Self::new(Tag::Pointer, ptr as u64)
-    }
-}
+impl<T> TryFrom<*const T> for Value {
+    type Error = ();
 
-impl<T> From<&T> for Value {
-    fn from(value: &T) -> Self {
-        Self::from(value as *const T)
+    fn try_from(value: *const T) -> Result<Self, Self::Error> {
+        let bits = value as u64;
+        // If the pointer is too large, return an error.
+        if bits > Self::INT_MASK {
+            return Err(());
+        }
+        Ok(Self::new(Tag::Pointer, bits))
     }
 }
 
@@ -401,7 +402,7 @@ mod tests {
     #[test]
     fn test_pointer() {
         let ptr = 0xdead_beef as *const u8;
-        let value = Value::from(ptr);
+        let value = Value::try_from(ptr).expect("pointer should fit");
         assert!(!value.is_f64());
         assert!(!value.is_int());
         assert!(!value.is_bool());
@@ -414,7 +415,7 @@ mod tests {
     #[test]
     fn test_ref() {
         let pointee = 10;
-        let pointer = Value::from(&pointee);
+        let pointer = Value::try_from(&pointee as *const i32).expect("pointer should fit");
         assert!(!pointer.is_f64());
         assert!(!pointer.is_int());
         assert!(!pointer.is_bool());
@@ -438,7 +439,7 @@ mod tests {
         let value = Value::from(());
         assert_eq!(format!("{}", value), "null");
         let ptr = 0xdead_beef as *const u8;
-        let value = Value::from(ptr);
+        let value = Value::try_from(ptr).expect("pointer should fit");
         assert_eq!(format!("{}", value), format!("{:p}", ptr));
     }
 }
