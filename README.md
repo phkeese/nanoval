@@ -20,19 +20,23 @@ The `Value` type can be constructed from `f64`, `bool`, `i32`, `u32`, `()` and p
 ```rust
 use nanoval::Value;
 
-let double = Value::from(3.14);
-let integer = Value::from(42);
-let boolean = Value::from(true);
-let null = Value::from(());
-let pointer = Value::from( & 42);
+fn creation() {
+    let double = Value::from(3.14);
+    let integer = Value::from(42);
+    let boolean = Value::from(true);
+    let pointee = 42;
+    let pointer = Value::from(&pointee);
+}
 ```
 
 The constructed value can be converted back to the original type:
 
 ```rust
-assert_eq!(double.as_f64(), Some(3.14));
-assert_eq!(integer.as_i32(), Some(42));
-assert_eq!(boolean.as_bool(), Some(true));
-assert!(null.is_null());
-assert_eq!(pointer.as_pointer::<i32>(), Some(&42 as *const i32));
+fn getters() {
+    assert_eq!(double.as_f64(), Some(3.14));
+    assert_eq!(integer.as_i32(), Some(42));
+    assert_eq!(boolean.as_bool(), Some(true));
+    assert!(null.is_null());
+    assert_eq!(pointer.as_pointer::<i32>(), Some(&pointee as *const i32));
+}
 ```
