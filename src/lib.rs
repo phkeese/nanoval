@@ -7,19 +7,9 @@ pub struct Value {
 }
 
 #[repr(u64)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Tag {
-    Nan = 0,
-    Null,
-    False,
-    True,
-    I32,
-    U32,
-}
-
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-enum Type {
-    Double,
+enum Tag {
+    Double = 0,
     Null,
     False,
     True,
@@ -44,7 +34,7 @@ impl Value {
     const FALSE: Self = Self::new_primitive(Tag::False);
     const TRUE: Self = Self::new_primitive(Tag::True);
     const NULL: Self = Self::new_primitive(Tag::Null);
-    const NAN: Self = Self::new_primitive(Tag::Nan);
+    const NAN: Self = Self::new_primitive(Tag::Double);
 
     /// Create a primitive tagged value.
     const fn new_primitive(tag: Tag) -> Self {
@@ -59,19 +49,19 @@ impl Value {
     }
 
     /// Get type of value.
-    fn get_type(self) -> Type {
+    fn tag(self) -> Tag {
         if self.is_double() {
-            return Type::Double;
+            return Tag::Double;
         } else if self.is_pointer() {
-            return Type::Pointer;
+            return Tag::Pointer;
         }
         let tag = (self.bits & Self::TAG_MASK) >> 48;
         match tag {
-            x if x == Tag::Null as u64 => Type::Null,
-            x if x == Tag::False as u64 => Type::False,
-            x if x == Tag::True as u64 => Type::True,
-            x if x == Tag::I32 as u64 => Type::I32,
-            x if x == Tag::U32 as u64 => Type::U32,
+            x if x == Tag::Null as u64 => Tag::Null,
+            x if x == Tag::False as u64 => Tag::False,
+            x if x == Tag::True as u64 => Tag::True,
+            x if x == Tag::I32 as u64 => Tag::I32,
+            x if x == Tag::U32 as u64 => Tag::U32,
             _ => unreachable!()
         }
     }
@@ -88,12 +78,12 @@ impl Value {
 
     /// Is this value an i32?
     pub fn is_i32(self) -> bool {
-        self.get_type() == Type::I32
+        self.tag() == Tag::I32
     }
 
     /// Is this value an u32?
     pub fn is_u32(self) -> bool {
-        self.get_type() == Type::U32
+        self.tag() == Tag::U32
     }
 
     /// Is this value a boolean?
@@ -255,13 +245,13 @@ impl<T> From<&T> for Value {
 impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         unsafe {
-            match self.get_type() {
-                Type::Double => write!(f, "{}", self.as_double_unchecked()),
-                Type::False => write!(f, "false"),
-                Type::True => write!(f, "true"),
-                Type::Null => write!(f, "null"),
-                Type::I32 => write!(f, "{}", self.as_i32_unchecked()),
-                Type::U32 => write!(f, "{}", self.as_u32_unchecked()),
+            match self.tag() {
+                Tag::Double => write!(f, "{}", self.as_double_unchecked()),
+                Tag::False => write!(f, "false"),
+                Tag::True => write!(f, "true"),
+                Tag::Null => write!(f, "null"),
+                Tag::I32 => write!(f, "{}", self.as_i32_unchecked()),
+                Tag::U32 => write!(f, "{}", self.as_u32_unchecked()),
                 _ => write!(f, "{:p}", self.as_pointer_unchecked::<u8>()),
             }
         }
